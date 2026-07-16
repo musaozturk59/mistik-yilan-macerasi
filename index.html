@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Mıstık Yılan Macerası</title>
+<style>
+:root{--cyan:#22cfff;--yellow:#ffd83d;--red:#ff5067;--green:#48e98a}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:linear-gradient(#071629,#03101c);font-family:Arial;color:#fff;touch-action:none}
+#gameWrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding-bottom:92px}
+canvas{display:block;max-width:100vw;max-height:calc(100vh - 92px);touch-action:none}
+#controls{position:fixed;left:50%;bottom:max(8px,env(safe-area-inset-bottom));transform:translateX(-50%);display:grid;grid-template-columns:repeat(5,1fr);gap:7px;width:min(96vw,560px);z-index:20}
+.ctrl{height:64px;border-radius:16px;border:3px solid var(--cyan);background:linear-gradient(#1c76bc,#103b6c);color:#fff;font-size:27px;font-weight:900;box-shadow:0 0 14px rgba(34,207,255,.55);user-select:none}.ctrl.wide{font-size:14px}.ctrl.red{background:linear-gradient(#ff5c70,#b91934);border-color:#ff92a1}
+#nameScreen{position:fixed;inset:0;background:rgba(0,7,18,.92);z-index:50;display:flex;align-items:center;justify-content:center;padding:20px}.card{width:min(92vw,520px);background:#071b31;border:3px solid var(--cyan);border-radius:24px;padding:26px;text-align:center}.card h1{margin:0 0 10px;color:var(--yellow);font-size:clamp(28px,7vw,42px)}.card p{font-size:clamp(15px,4vw,19px)}#nickname{width:100%;height:54px;border-radius:14px;border:2px solid var(--cyan);padding:0 14px;font-size:20px;text-align:center}#startBtn{margin-top:14px;width:100%;height:56px;border:0;border-radius:14px;background:linear-gradient(#49e98a,#16994f);color:#052012;font-size:20px;font-weight:900}
+@media(max-width:600px){#gameWrap{padding-bottom:88px}canvas{max-height:calc(100vh - 88px)}.ctrl{height:58px;font-size:24px;border-radius:14px}.ctrl.wide{font-size:12px}#controls{gap:5px}}
+</style>
+</head>
+<body>
+<div id="nameScreen"><div class="card"><h1>MISTIK YILAN MACERASI</h1><p>Takma adını yaz, iyi tohumları topla ve Mıstık’ın evine ulaş.</p><input id="nickname" maxlength="24" placeholder="Takma adın"><button id="startBtn">OYUNA BAŞLA</button></div></div>
+<div id="gameWrap"><canvas id="g" width="900" height="1500"></canvas></div>
+<div id="controls"><button class="ctrl" id="l">⬅</button><button class="ctrl" id="u">⬆</button><button class="ctrl" id="r">➡</button><button class="ctrl wide" id="p">DURDUR</button><button class="ctrl wide red" id="n">YENİDEN</button></div>
+<script>
+const SUPABASE_BASE="https://ijdnzuitfairifxkobca.supabase.co";
+const SUPABASE_KEY="sb_publishable_39CmWrSiFQ9GSPFP7IqOwA_7xD0mGCz";
+const SUPABASE_TABLE="snake_scores";
+const c=document.getElementById("g"),x=c.getContext("2d"),W=c.width,H=c.height;
+const C=20,R=28,bx=70,by=300,bw=760,bh=1030,cw=bw/C,ch=bh/R;
+const D={L:[-1,0],R:[1,0],U:[0,-1],D:[0,1]};
+let st="name",lv=1,sc=0,life=5,pa=false,snake=[],dir=D.R,next=D.R,good=[],bad=[],walls=[],home={x:17,y:25};
+let last=0,speed=230,msg="",msgT=0,nickname="",leaders=[],saveStatus="",lastLeaderRefresh=0;
+const LS=[
+ {speed:230,g:10,b:5,w:[[4,3,2,2],[15,3,2,2],[5,8,2,2],[10,9,2,3],[15,9,2,2],[4,14,4,2],[11,15,2,2],[15,15,2,4],[5,20,2,2],[13,21,2,2]]},
+ {speed:195,g:13,b:8,w:[[3,3,4,1],[13,3,4,1],[5,6,2,4],[11,6,2,3],[16,7,2,4],[3,12,5,2],[10,12,2,5],[14,13,4,2],[5,18,2,4],[9,20,5,2],[15,22,2,3]]},
+ {speed:165,g:16,b:11,w:[[2,3,5,1],[8,3,1,5],[12,3,5,1],[3,7,2,4],[6,9,5,1],[13,7,2,5],[16,10,2,4],[2,14,6,1],[9,13,2,5],[12,16,6,1],[4,19,2,4],[7,21,5,1],[14,20,2,4],[17,22,1,3]]}
+];
+function rr(a,b,w,h,r){x.beginPath();x.moveTo(a+r,b);x.arcTo(a+w,b,a+w,b+h,r);x.arcTo(a+w,b+h,a,b+h,r);x.arcTo(a,b+h,a,b,r);x.arcTo(a,b,a+w,b,r);x.closePath()}
+function tx(t,a,b,s,col="#fff",align="center"){x.fillStyle=col;x.font="900 "+s+"px Arial";x.textAlign=align;x.textBaseline="middle";x.fillText(t,a,b)}
+function iw(a,b){return walls.some(q=>a>=q.x&&a<q.x+q.w&&b>=q.y&&b<q.y+q.h)}
+function occ(a,b){return iw(a,b)||snake.some(q=>q.x==a&&q.y==b)||good.some(q=>q.x==a&&q.y==b)||bad.some(q=>q.x==a&&q.y==b)||(home.x==a&&home.y==b)}
+function rc(){for(let i=0;i<1000;i++){let a=1+Math.floor(Math.random()*(C-2)),b=1+Math.floor(Math.random()*(R-2));if(!occ(a,b))return{x:a,y:b}}return{x:1,y:1}}
+function build(){let L=LS[lv-1];speed=L.speed;walls=L.w.map(a=>({x:a[0],y:a[1],w:a[2],h:a[3]}));snake=[{x:2,y:25},{x:1,y:25}];dir=next=D.R;good=[];bad=[];home={x:17,y:25};for(let i=0;i<L.g;i++)good.push(rc());for(let i=0;i<L.b;i++)bad.push(rc());msg="BÖLÜM "+lv;msgT=performance.now()+1400}
+function reset(){lv=1;sc=0;life=5;st="play";pa=false;saveStatus="";build()}
+function turn(k){if(st=="level"){lv++;st="play";life=5;build();return}if(st=="win"||st=="over"){document.getElementById("nameScreen").style.display="flex";st="name";return}let d=D[k];if(!d)return;if(d[0]==-dir[0]&&d[1]==-dir[1])return;next=d}
+function lose(t){life--;msg=t;msgT=performance.now()+1200;if(life<=0){st="over";saveScore("Kaybetti");return}snake=[{x:2,y:25},{x:1,y:25}];dir=next=D.R}
+function step(){if(st!="play"||pa)return;dir=next;let h=snake[0],n={x:h.x+dir[0],y:h.y+dir[1]};if(n.x<0||n.x>=C||n.y<0||n.y>=R||iw(n.x,n.y)||snake.some(q=>q.x==n.x&&q.y==n.y)){lose("ENGELE ÇARPTIN! -1 CAN");return}snake.unshift(n);let i=good.findIndex(q=>q.x==n.x&&q.y==n.y);if(i>=0){good.splice(i,1);sc+=100;msg="İYİ TOHUM +100";msgT=performance.now()+600}else snake.pop();i=bad.findIndex(q=>q.x==n.x&&q.y==n.y);if(i>=0){bad.splice(i,1);lose("KÖTÜ TOHUM! -1 CAN");return}if(n.x==home.x&&n.y==home.y){if(good.length==0){sc+=500*lv;if(lv==3){st="win";saveScore("Kazandı")}else st="level"}else{msg="ÖNCE TÜM İYİ TOHUMLARI TOPLA";msgT=performance.now()+1000}}}
+async function saveScore(status){saveStatus="Kaydediliyor...";try{const row={nickname,score:sc,level:lv,lives:life,status};const res=await fetch(SUPABASE_BASE+"/rest/v1/"+SUPABASE_TABLE,{method:"POST",headers:{"apikey":SUPABASE_KEY,"Authorization":"Bearer "+SUPABASE_KEY,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(row)});saveStatus=res.ok?"Skor kaydedildi ✓":"Skor kaydedilemedi"}catch(e){saveStatus="Bağlantı hatası"}await loadLeaders()}
+async function loadLeaders(){try{const url=SUPABASE_BASE+"/rest/v1/"+SUPABASE_TABLE+"?select=nickname,score&order=score.desc&limit=10";const res=await fetch(url,{headers:{"apikey":SUPABASE_KEY,"Authorization":"Bearer "+SUPABASE_KEY}});if(res.ok)leaders=await res.json()}catch(e){}}
+function cell(a,b,p=3){return[bx+a*cw+p,by+b*ch+p,cw-p*2,ch-p*2]}
+function bg(){let g=x.createLinearGradient(0,0,0,H);g.addColorStop(0,"#07162a");g.addColorStop(1,"#03101c");x.fillStyle=g;x.fillRect(0,0,W,H)}
+function head(){rr(28,28,844,225,28);x.fillStyle="#061a2f";x.fill();x.strokeStyle="#24c7ff";x.lineWidth=4;x.stroke();tx("MISTIK",160,80,40,"#ffd83d");tx("YILAN MACERASI",195,125,18,"#24c7ff");tx("BÖLÜM "+lv+"/3",500,80,28);tx("SKOR "+sc,700,80,28);tx("İYİ TOHUM: "+good.length,650,135,22,"#58ef87");tx("CAN: "+life,650,190,28,"#ff5a70");tx("🐱",75,102,56)}
+function board(){x.fillStyle="#06192d";x.fillRect(bx,by,bw,bh);x.strokeStyle="rgba(30,110,180,.35)";for(let i=0;i<=C;i++){x.beginPath();x.moveTo(bx+i*cw,by);x.lineTo(bx+i*cw,by+bh);x.stroke()}for(let i=0;i<=R;i++){x.beginPath();x.moveTo(bx,by+i*ch);x.lineTo(bx+bw,by+i*ch);x.stroke()}x.strokeStyle="#24c7ff";x.lineWidth=4;x.strokeRect(bx,by,bw,bh)}
+function objs(){walls.forEach(w=>{for(let yy=0;yy<w.h;yy++)for(let xx=0;xx<w.w;xx++){let[a,b,w1,h1]=cell(w.x+xx,w.y+yy,2);rr(a,b,w1,h1,5);x.fillStyle="#c95249";x.fill();x.strokeStyle="#ffb0a7";x.stroke()}});good.forEach(q=>tx("★",bx+(q.x+.5)*cw,by+(q.y+.5)*ch,30,"#ffd83d"));bad.forEach(q=>tx("✹",bx+(q.x+.5)*cw,by+(q.y+.5)*ch,28,"#ff4159"));let[a,b,w,h]=cell(home.x,home.y,1);rr(a,b,w,h,6);x.fillStyle=good.length?"#777":"#43e67b";x.fill();tx("🏠",a+w/2,b+h/2,30);snake.forEach((q,i)=>{let[a,b,w,h]=cell(q.x,q.y,2);rr(a,b,w,h,8);x.fillStyle=i?"#50b8ff":"#ffb04a";x.fill();x.strokeStyle="#d9f7ff";x.stroke()})}
+function drawLeaderboard(){const ww=700,hh=430,xx=100,yy=650;rr(xx,yy,ww,hh,24);x.fillStyle="rgba(5,23,43,.97)";x.fill();x.strokeStyle="#24c7ff";x.lineWidth=4;x.stroke();tx("🏆 EN İYİ 10 OYUNCU",W/2,700,30,"#ffd83d");if(!leaders.length)tx("Skorlar yükleniyor...",W/2,760,22);leaders.slice(0,10).forEach((r,i)=>{tx((i+1)+". "+(r.nickname||"Oyuncu"),150,760+i*29,20,i<3?"#ffd83d":"#fff","left");tx(String(r.score||0),750,760+i*29,20,i<3?"#ffd83d":"#fff","right")})}
+function ov(t,s){x.fillStyle="rgba(0,0,0,.76)";x.fillRect(0,0,W,H);tx(t,W/2,370,42,"#ffd83d");tx("Takma ad: "+nickname+" • Skor: "+sc,W/2,425,24);tx(s,W/2,470,21);tx(saveStatus,W/2,515,19,"#6fffa1");if(st=="win"||st=="over")drawLeaderboard();else{rr(90,520,720,300,28);x.fillStyle="#061a2f";x.fill();x.strokeStyle="#24c7ff";x.lineWidth=4;x.stroke();tx("Ekrana dokun veya yön tuşuna bas",W/2,700,22,"#70dfff")}}
+function draw(){bg();head();board();objs();if(performance.now()<msgT){rr(170,255,560,55,18);x.fillStyle="rgba(0,0,0,.72)";x.fill();tx(msg,W/2,282,22)}if(pa&&st=="play")ov("OYUN DURDU","Devam için DURDUR tuşuna bas");if(st=="level")ov("TEBRİKLER! BÖLÜM TAMAMLANDI","Yeni bölüme geçmek için dokun");if(st=="win")ov("OYUN BİTTİ – KAZANDINIZ","Mıstık bütün iyi tohumları topladı");if(st=="over")ov("OYUN BİTTİ","Canlarınız tükendi");if((st=="win"||st=="over")&&Date.now()-lastLeaderRefresh>1500){lastLeaderRefresh=Date.now();loadLeaders()}requestAnimationFrame(draw)}
+function loop(t){if(!last)last=t;if(t-last>=speed){last=t;step()}requestAnimationFrame(loop)}
+[["l","L"],["u","U"],["r","R"]].forEach(a=>document.getElementById(a[0]).onpointerdown=e=>{e.preventDefault();turn(a[1])});
+document.getElementById("p").onpointerdown=e=>{e.preventDefault();if(st=="play"){pa=!pa;e.target.textContent=pa?"DEVAM":"DURDUR"}};
+document.getElementById("n").onpointerdown=e=>{e.preventDefault();reset()};
+document.onkeydown=e=>{let m={ArrowLeft:"L",a:"L",ArrowRight:"R",d:"R",ArrowUp:"U",w:"U",ArrowDown:"D",s:"D"};if(m[e.key]){e.preventDefault();turn(m[e.key])}};
+c.onpointerdown=()=>{if(st=="level")turn("R")};
+document.getElementById("startBtn").onclick=()=>{nickname=document.getElementById("nickname").value.trim()||"Oyuncu";document.getElementById("nameScreen").style.display="none";st="play";reset();loadLeaders()};
+build();draw();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
