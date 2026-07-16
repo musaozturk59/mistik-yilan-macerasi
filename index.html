@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+<title>Mıstık Yılan Macerası</title>
+<style>
+:root{--bg:#031426;--cyan:#28c8ff;--yellow:#ffd43b;--red:#ff4f66;--green:#4ee58a}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);font-family:Arial,Helvetica,sans-serif;color:#fff;touch-action:none}
+#app{height:100dvh;display:flex;flex-direction:column;gap:8px;padding:max(8px,env(safe-area-inset-top)) 8px max(8px,env(safe-area-inset-bottom))}
+#hud{border:3px solid var(--cyan);border-radius:24px;background:linear-gradient(180deg,#061a31,#061426);display:grid;grid-template-columns:1.2fr .8fr .8fr;align-items:center;padding:10px 14px;min-height:112px}
+.logo{font-weight:900;color:var(--yellow);font-size:clamp(22px,5vw,38px);line-height:1}.logo small{display:block;color:var(--cyan);font-size:.48em;margin-top:10px}
+.hudbox{text-align:center;font-weight:900;font-size:clamp(18px,4vw,31px)}#goodText{color:var(--green);margin-top:14px}#livesText{color:var(--red);margin-top:14px}
+#gameWrap{position:relative;flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
+canvas{display:block;background:linear-gradient(#0d3b6c44 1px,transparent 1px),linear-gradient(90deg,#0d3b6c44 1px,transparent 1px),#04182c;background-size:5% 5%;border:3px solid var(--cyan);max-width:100%;max-height:100%;aspect-ratio:20/27}
+#controls{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;min-height:92px}.ctrl{border:3px solid var(--cyan);border-radius:22px;background:linear-gradient(#187fdf,#0c4ca2);color:#fff;font-weight:900;font-size:clamp(18px,5vw,34px);box-shadow:0 0 16px #1ec8ff88}.ctrl:active{transform:scale(.96)}.ctrl.down{border-color:#ffe24c}.ctrl.stop,.ctrl.restart{font-size:clamp(14px,3.6vw,24px)}.ctrl.restart{background:linear-gradient(#ff5d76,#b91f35);border-color:#ff8393}
+#overlay{position:absolute;inset:0;background:#00101be8;display:flex;align-items:center;justify-content:center;z-index:5;padding:18px}.card{width:min(92vw,520px);background:#061a31;border:3px solid var(--cyan);border-radius:26px;padding:22px;text-align:center}.card h1{color:var(--yellow);margin:0 0 14px;font-size:clamp(26px,7vw,44px)}.card input{width:100%;padding:15px;border-radius:14px;border:2px solid var(--cyan);font-size:20px;text-align:center;margin:12px 0}.primary{width:100%;padding:15px;border:0;border-radius:16px;background:linear-gradient(#38d27a,#14914a);color:#fff;font-weight:900;font-size:22px}#leaderboard{margin-top:14px;border:2px solid var(--cyan);border-radius:16px;padding:12px;text-align:left;max-height:260px;overflow:auto}.row{display:flex;justify-content:space-between;padding:6px 2px;border-bottom:1px solid #ffffff22}.hidden{display:none!important}
+@media(max-width:650px){#app{gap:6px;padding-left:4px;padding-right:4px}#hud{min-height:100px;border-radius:18px;padding:8px}#controls{gap:5px;min-height:82px}.ctrl{border-radius:18px}}
+</style>
+</head>
+<body>
+<div id="app">
+<div id="hud"><div class="logo">🐱 MISTIK<small>YILAN MACERASI</small></div><div class="hudbox">BÖLÜM <span id="levelText">1/3</span><div id="goodText">İYİ TOHUM: 0</div></div><div class="hudbox">SKOR <span id="scoreText">0</span><div id="livesText">CAN: 5</div></div></div>
+<div id="gameWrap"><canvas id="game" width="600" height="810"></canvas><div id="overlay"><div class="card" id="startCard"><h1>Mıstık Yılan Macerası</h1><p>İyi tohumların hepsini topla, kötü tohumlardan ve engellerden kaç, sonra Mıstık'ın evine ulaş.</p><input id="nickname" maxlength="18" placeholder="Takma adını yaz"><button class="primary" id="startBtn">OYUNA BAŞLA</button></div><div class="card hidden" id="resultCard"><h1 id="resultTitle">OYUN BİTTİ</h1><p id="resultInfo"></p><p id="saveInfo"></p><div id="leaderboard"><b>🏆 EN İYİ 10 OYUNCU</b><div id="leaderRows"></div></div><button class="primary" id="againBtn" style="margin-top:14px">YENİDEN OYNA</button></div></div></div>
+<div id="controls"><button class="ctrl" data-dir="left">⬅</button><button class="ctrl" data-dir="up">⬆</button><button class="ctrl down" data-dir="down">⬇</button><button class="ctrl" data-dir="right">➡</button><button class="ctrl stop" id="pauseBtn">DURDUR</button><button class="ctrl restart" id="restartBtn">YENİDEN</button></div>
+</div>
+<script>
+const SUPABASE_BASE="https://ijdnzuitfairifxkobca.supabase.co";
+const SUPABASE_KEY="sb_publishable_39CmWrSiFQ9GSPFP7IqOwA_7xD0mGCz";
+const SUPABASE_TABLE="snake_scores";
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');const COLS=20,ROWS=27,CW=canvas.width/COLS,CH=canvas.height/ROWS;
+let nickname="",level=1,score=0,lives=5,paused=false,running=false,timer=null,snake=[],dir={x:1,y:0},nextDir={x:1,y:0},good=[],bad=[],obstacles=[],home={x:18,y:24};
+const layouts=[[[4,3,2,2],[15,3,2,2],[5,8,2,2],[10,9,2,3],[15,9,2,2],[4,14,4,2],[11,15,2,2],[15,15,2,4],[5,20,2,2],[13,21,2,2]],[[3,4,3,2],[13,3,3,2],[7,8,2,4],[14,9,2,2],[3,14,5,2],[10,15,2,4],[15,17,3,2],[5,21,2,3],[12,22,3,2]],[[2,3,4,2],[13,3,4,2],[5,7,2,5],[10,7,3,2],[15,8,2,5],[3,14,4,3],[9,15,2,4],[14,16,4,2],[5,22,3,2],[12,21,2,4]]];
+function randCell(){return{x:Math.floor(Math.random()*COLS),y:Math.floor(Math.random()*ROWS)}}
+function blocked(c){if(snake.some(s=>s.x===c.x&&s.y===c.y))return true;if(obstacles.some(o=>c.x>=o.x&&c.x<o.x+o.w&&c.y>=o.y&&c.y<o.y+o.h))return true;if(good.some(s=>s.x===c.x&&s.y===c.y)||bad.some(s=>s.x===c.x&&s.y===c.y))return true;return c.x===home.x&&c.y===home.y}
+function spawnMany(arr,count){while(arr.length<count){const c=randCell();if(!blocked(c))arr.push(c)}}
+function initLevel(){clearInterval(timer);obstacles=layouts[level-1].map(a=>({x:a[0],y:a[1],w:a[2],h:a[3]}));snake=[{x:10,y:25},{x:9,y:25},{x:8,y:25}];dir={x:1,y:0};nextDir={x:1,y:0};good=[];bad=[];home={x:18,y:24};spawnMany(good,10+level*2);spawnMany(bad,3+level);updateHud();draw();timer=setInterval(step,[360,290,230][level-1])}
+function updateHud(){levelText.textContent=level+"/3";scoreText.textContent=score;goodText.textContent="İYİ TOHUM: "+good.length;livesText.textContent="CAN: "+lives}
+function setDir(x,y){if(x===-dir.x&&y===-dir.y)return;nextDir={x,y}}
+document.querySelectorAll('[data-dir]').forEach(b=>b.addEventListener('pointerdown',e=>{e.preventDefault();const d=b.dataset.dir;if(d==='left')setDir(-1,0);if(d==='right')setDir(1,0);if(d==='up')setDir(0,-1);if(d==='down')setDir(0,1)}));
+window.addEventListener('keydown',e=>{if(e.key==='ArrowLeft')setDir(-1,0);if(e.key==='ArrowRight')setDir(1,0);if(e.key==='ArrowUp')setDir(0,-1);if(e.key==='ArrowDown')setDir(0,1)});
+function hitObstacle(h){return obstacles.some(o=>h.x>=o.x&&h.x<o.x+o.w&&h.y>=o.y&&h.y<o.y+o.h)}
+function loseLife(){lives--;updateHud();if(lives<=0){finish(false);return}snake=[{x:10,y:25},{x:9,y:25},{x:8,y:25}];dir={x:1,y:0};nextDir={x:1,y:0}}
+function step(){if(!running||paused)return;dir=nextDir;const h={x:snake[0].x+dir.x,y:snake[0].y+dir.y};if(h.x<0||h.y<0||h.x>=COLS||h.y>=ROWS||hitObstacle(h)||snake.some(s=>s.x===h.x&&s.y===h.y)){loseLife();draw();return}snake.unshift(h);let grew=false;let gi=good.findIndex(s=>s.x===h.x&&s.y===h.y);if(gi>=0){good.splice(gi,1);score+=100*level;grew=true}let bi=bad.findIndex(s=>s.x===h.x&&s.y===h.y);if(bi>=0){bad.splice(bi,1);score=Math.max(0,score-150);loseLife();draw();return}if(!grew)snake.pop();if(good.length===0&&h.x===home.x&&h.y===home.y){score+=500*level;if(level<3){level++;lives=5;initLevel();return}else{finish(true);return}}updateHud();draw()}
+function drawStar(x,y){ctx.save();ctx.translate((x+.5)*CW,(y+.5)*CH);ctx.fillStyle='#ffd43b';ctx.beginPath();for(let i=0;i<10;i++){let a=-Math.PI/2+i*Math.PI/5,r=i%2?CW*.18:CW*.38;ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r)}ctx.closePath();ctx.fill();ctx.restore()}
+function drawHome(){const x=home.x*CW,y=home.y*CH,w=CW*2.2,h=CH*2.1;ctx.save();ctx.shadowColor='#7dff4e';ctx.shadowBlur=18;ctx.fillStyle='#ffe7a6';ctx.strokeStyle='#7a2a15';ctx.lineWidth=4;ctx.beginPath();ctx.rect(x-w*.45,y-h*.05,w*.9,h*.62);ctx.fill();ctx.stroke();ctx.fillStyle='#e34234';ctx.beginPath();ctx.moveTo(x-w*.55,y);ctx.lineTo(x,y-h*.52);ctx.lineTo(x+w*.55,y);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle='#7b3d1f';ctx.fillRect(x-w*.1,y+h*.25,w*.2,h*.32);ctx.fillStyle='#ffe84b';ctx.fillRect(x-w*.32,y+h*.08,w*.16,h*.16);ctx.fillRect(x+w*.16,y+h*.08,w*.16,h*.16);ctx.restore()}
+function draw(){ctx.clearRect(0,0,canvas.width,canvas.height);obstacles.forEach(o=>{for(let yy=0;yy<o.h;yy++)for(let xx=0;xx<o.w;xx++){let x=(o.x+xx)*CW+3,y=(o.y+yy)*CH+3;ctx.fillStyle='#d95550';ctx.strokeStyle='#ff9a94';ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(x,y,CW-6,CH-6,7);ctx.fill();ctx.stroke()}});good.forEach(s=>drawStar(s.x,s.y));bad.forEach(s=>{ctx.fillStyle='#ff355b';ctx.beginPath();ctx.arc((s.x+.5)*CW,(s.y+.5)*CH,CW*.25,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#ff9ab0';ctx.stroke()});drawHome();snake.forEach((s,i)=>{ctx.fillStyle=i===0?'#42bfff':'#ffae39';ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(s.x*CW+3,s.y*CH+3,CW-6,CH-6,8);ctx.fill();ctx.stroke()})}
+pauseBtn.onclick=()=>{paused=!paused;pauseBtn.textContent=paused?'DEVAM':'DURDUR'};restartBtn.onclick=()=>{if(running){level=1;score=0;lives=5;paused=false;initLevel()}};
+startBtn.onclick=()=>{nickname=document.getElementById('nickname').value.trim()||'Oyuncu';overlay.classList.add('hidden');running=true;level=1;score=0;lives=5;paused=false;initLevel()};againBtn.onclick=()=>{resultCard.classList.add('hidden');startCard.classList.remove('hidden');overlay.classList.remove('hidden');running=false;clearInterval(timer)};
+async function saveScore(win){saveInfo.textContent='Skor kaydediliyor...';try{const r=await fetch(`${SUPABASE_BASE}/rest/v1/${SUPABASE_TABLE}`,{method:'POST',headers:{apikey:SUPABASE_KEY,Authorization:'Bearer '+SUPABASE_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({nickname,score,level,lives,status:win?'won':'lost'})});if(!r.ok)throw new Error(await r.text());saveInfo.textContent='Skor kaydedildi ✓'}catch(e){saveInfo.textContent='Skor kaydı başarısız'}loadLeaders()}
+async function loadLeaders(){leaderRows.innerHTML='Skorlar yükleniyor...';try{const r=await fetch(`${SUPABASE_BASE}/rest/v1/${SUPABASE_TABLE}?select=nickname,score&order=score.desc&limit=10`,{headers:{apikey:SUPABASE_KEY,Authorization:'Bearer '+SUPABASE_KEY}});const rows=await r.json();leaderRows.innerHTML=rows.map((x,i)=>`<div class="row"><span>${i+1}. ${escapeHtml(x.nickname||'Oyuncu')}</span><b>${x.score||0}</b></div>`).join('')||'Henüz skor yok.'}catch(e){leaderRows.textContent='Sıralama yüklenemedi.'}}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function finish(win){running=false;clearInterval(timer);draw();overlay.classList.remove('hidden');startCard.classList.add('hidden');resultCard.classList.remove('hidden');resultTitle.textContent=win?'OYUN BİTTİ — KAZANDINIZ!':'OYUN BİTTİ';resultInfo.textContent=`Takma ad: ${nickname} • Skor: ${score} • Bölüm: ${level}`;saveScore(win)}
+</script>
+</body>
+</html>
